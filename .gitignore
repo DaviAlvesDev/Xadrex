@@ -1,0 +1,6 @@
+# Executáveis
+bin/*.exe
+bin/xadrez
+
+# Objetos
+*.o
