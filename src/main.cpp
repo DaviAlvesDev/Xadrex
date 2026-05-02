@@ -1,4 +1,6 @@
 #include <iostream>
+#include <vector>
+#include <cstdlib>
 #include <raylib.h>
 #include "config.hpp"
 
@@ -21,6 +23,19 @@ struct Peca
     PosicaoCasa pos_casa = {};
     Texture2D textura;
     bool is_selecionada = false;
+    bool is_capturada = false;
+    uint8 moves_quant = 0;
+    std::vector<PosicaoCasa> legal_moves;
+
+    void print_legal_moves()
+    {
+        std::cout << this->tipo << " em " << pos_casa.coluna << pos_casa.linha << ": ";
+        for (int i = 0, n = this->legal_moves.size(); i < n; i++)
+        {
+            std::cout << this->legal_moves[i].coluna << this->legal_moves[i].linha << ", ";
+        }
+        std::cout << std::endl;
+    }
 };
 
 struct Casa 
@@ -30,10 +45,12 @@ struct Casa
     Color cor = WHITE;
 };
 
+Peca* passant = NULL;
 Peca pecas[32];
 Casa tabuleiro[8][8];
 uint8 tipo_pecas[] = {TORRE, CAVALO, BISPO, DAMA, REI, PEAO};
 bool is_peca_selecionada = false;
+bool is_brancas_turno = true;
 
 void  desenhar_tabuleiro();
 void desenhar_pecas();
@@ -45,7 +62,12 @@ void descarregar();
 PosicaoCasa posicao_mouse();
 void lidar_com_click();
 void selecionar_peca(PosicaoCasa casa);
+Peca* procurar_peca(PosicaoCasa casa);
+void capturar_peca(Peca &peca);
 void mover_peca(Peca &peca, PosicaoCasa casa);
+void calcular_legal_moves();
+void calcular_lmoves_peao(Peca &peca);
+bool en_passant(PosicaoCasa casa);
 
 int main()
 {
@@ -55,6 +77,7 @@ int main()
     criar_pecas();
     criar_tabuleiro();
     posicionar_pecas();
+    calcular_legal_moves();
 
     while (!WindowShouldClose())
     {
@@ -91,10 +114,11 @@ void selecionar_peca(PosicaoCasa casa)
 {
     for (int i = 0; i  < 32; i++)
     {
-        TraceLog(LOG_INFO, "Comparando click %c%c com peca em %c%c", casa.coluna, casa.linha, pecas[i].pos_casa.coluna, pecas[i].pos_casa.linha);
-
         if (pecas[i].pos_casa == casa) 
         {
+            if (pecas[i].is_branca && !is_brancas_turno) return;
+            else if (!pecas[i].is_branca && is_brancas_turno) return;
+
             pecas[i].is_selecionada = true;
             is_peca_selecionada = true;
             return;
@@ -104,6 +128,37 @@ void selecionar_peca(PosicaoCasa casa)
 
 void mover_peca(Peca &peca, PosicaoCasa casa)
 {
+    bool is_legal = false;
+    for (int i = 0, n = peca.legal_moves.size(); i < n; i++)
+    {
+        if (peca.legal_moves[i] == casa) 
+        {
+            is_legal = true;
+            break;
+        }
+    }
+
+    if (!is_legal) 
+    {
+        is_peca_selecionada = false;
+        peca.is_selecionada = false;
+
+        selecionar_peca(casa);
+        return;
+    }
+
+    Peca *capturada = procurar_peca(casa);
+    if (capturada) capturar_peca(*capturada);
+
+    if (peca.tipo == PEAO)
+    {
+        if (passant && casa.coluna != peca.pos_casa.coluna) capturar_peca(*passant);
+
+        if (std::abs(casa.linha - peca.pos_casa.linha) == 2) passant = &peca;
+    }
+
+    else passant = NULL;
+
     for (int i = 0; i < 8; i++)
     {
         for (int j = 0; j < 8; j++)
@@ -117,6 +172,10 @@ void mover_peca(Peca &peca, PosicaoCasa casa)
                 
                 peca.is_selecionada = false;
                 is_peca_selecionada = false;
+
+                is_brancas_turno = !is_brancas_turno;
+                peca.moves_quant++;
+                calcular_legal_moves();
                 return;
             }
         }
@@ -295,6 +354,7 @@ void desenhar_pecas()
 {
     for (int i = 0; i < 32; i++)
     {
+        if (pecas[i].is_capturada) continue;
         Color cor;
         if (pecas[i].is_branca) cor = corBrancas;
         else cor = corPretas;
@@ -306,3 +366,94 @@ void desenhar_pecas()
         DrawTextureV(pecas[i].textura, pecas[i].pos, cor);
     }
 }
+
+Peca* procurar_peca(PosicaoCasa casa)
+{
+    for (int i = 0; i < 32; i++)
+    {
+        if (pecas[i].pos_casa == casa) return &pecas[i];
+    }
+
+    return NULL;
+}
+
+void calcular_legal_moves()
+{
+    for (int i = 0; i < 32; i++)
+    {
+        if (pecas[i].is_capturada) continue;
+
+        switch (pecas[i].tipo)
+        {
+        case PEAO:
+            calcular_lmoves_peao(pecas[i]);
+            pecas[i].print_legal_moves();
+            break;
+        
+        default:
+            break;
+        }
+    }
+}
+
+void calcular_lmoves_peao(Peca &peca)
+{
+    if (peca.tipo != PEAO) return;
+
+    peca.legal_moves.clear();
+
+    uint8 direcao = peca.is_branca ? 1 : -1;
+    
+    {
+        PosicaoCasa legal_move = peca.pos_casa;
+        
+        legal_move.linha += direcao;
+        Peca* alvo = procurar_peca(legal_move);
+        
+        if (!alvo) 
+        {
+            peca.legal_moves.push_back(legal_move);
+            
+            legal_move.linha += direcao;
+            alvo = procurar_peca(legal_move);
+            if (!alvo) peca.legal_moves.push_back(legal_move);
+        }
+    }
+    
+    {
+        int diagonais[] = {1, -1};
+        
+        for (int i = 0; i < 2; i++)
+        {
+            PosicaoCasa legal_move = peca.pos_casa;
+            legal_move.linha += direcao;
+            legal_move.coluna += diagonais[i];
+
+            Peca* alvo = procurar_peca(legal_move);
+            if (alvo && (alvo->is_branca ^ peca.is_branca)) peca.legal_moves.push_back(legal_move);
+
+            if (passant && (passant->is_branca ^ peca.is_branca) && en_passant(legal_move)) peca.legal_moves.push_back(legal_move);
+        }
+    }
+    
+}
+
+bool en_passant(PosicaoCasa casa)
+{
+    if (!passant) return false;
+
+    PosicaoCasa tmp = passant->pos_casa;
+
+    if (passant->is_branca) tmp.linha--;
+    else tmp.linha++;
+
+    return tmp == casa;
+}
+
+void capturar_peca(Peca &peca)
+{
+    peca.is_capturada = true;
+    peca.pos = {0, 0};
+    peca.pos_casa = {0, 0};
+}
+
