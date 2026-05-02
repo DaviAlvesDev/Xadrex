@@ -67,6 +67,7 @@ void capturar_peca(Peca &peca);
 void mover_peca(Peca &peca, PosicaoCasa casa);
 void calcular_legal_moves();
 void calcular_lmoves_peao(Peca &peca);
+void calcular_lmoves_torre(Peca &peca);
 bool en_passant(PosicaoCasa casa);
 
 int main()
@@ -387,9 +388,13 @@ void calcular_legal_moves()
         {
         case PEAO:
             calcular_lmoves_peao(pecas[i]);
+            break;
+            
+        case TORRE:
+            calcular_lmoves_torre(pecas[i]);
             pecas[i].print_legal_moves();
             break;
-        
+
         default:
             break;
         }
@@ -449,6 +454,40 @@ bool en_passant(PosicaoCasa casa)
 
     return tmp == casa;
 }
+
+void calcular_lmoves_torre(Peca &peca)
+{
+    if (peca.tipo != TORRE) return;
+    int direcoes[] = {1, -1};
+
+    for (int i = 0; i < 2; i++) 
+    {
+        PosicaoCasa legal_move = peca.pos_casa;
+        legal_move.linha += direcoes[i];
+        for (; procurar_peca(legal_move) == NULL && legal_move.linha <= '8' && legal_move.linha >= '1'; legal_move.linha += direcoes[i])
+        {
+            peca.legal_moves.push_back(legal_move);
+        }
+
+        Peca* alvo = procurar_peca(legal_move);
+        if (alvo && (alvo->is_branca ^ peca.is_branca)) peca.legal_moves.push_back(legal_move);
+    }
+
+    for (int i = 0; i < 2; i++) 
+    {
+        PosicaoCasa legal_move = peca.pos_casa;
+        legal_move.coluna += direcoes[i];
+        for (; procurar_peca(legal_move) == NULL && legal_move.coluna <= 'h' && legal_move.coluna >= 'a'; legal_move.coluna += direcoes[i])
+        {
+            peca.legal_moves.push_back(legal_move);
+        }
+
+        Peca* alvo = procurar_peca(legal_move);
+        if (alvo && (alvo->is_branca ^ peca.is_branca)) peca.legal_moves.push_back(legal_move);
+    }
+
+}
+
 
 void capturar_peca(Peca &peca)
 {
